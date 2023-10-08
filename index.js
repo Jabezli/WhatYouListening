@@ -1,8 +1,11 @@
 require("dotenv").config();
 const express = require("express");
+const axios = require("axios");
 
 //To parse and stringify query strings.
 const querystring = require("querystring");
+const { redirect } = require("express/lib/response");
+const { log } = require("console");
 
 const app = express();
 const port = 8888;
@@ -42,7 +45,7 @@ app.get("/login", (req, res) => {
   res.cookie(stateKey, state);
 
   //Read access to user’s subscription details (type of user account). 	Read access to user’s email address.
-  const scope = "user-read-private user_read_email";
+  const scope = "user-read-private user-read-email";
 
   const queryParams = querystring.stringify({
     client_id: CLIENT_ID,
@@ -53,6 +56,78 @@ app.get("/login", (req, res) => {
   });
   res.redirect(`https://accounts.spotify.com/authorize?${queryParams}`);
 });
+
+//to exchange token after login for OAutho 2.0
+app.get("/callback", (req, res) => {
+  const code = req.query.code || null;
+
+  axios({
+    method: "post",
+    url: "https://accounts.spotify.com/api/token",
+    data: querystring.stringify({
+      grant_type: "authorization_code",
+      code: code,
+      redirect_uri: REDIRECT_URI,
+    }),
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${new Buffer.from(
+        `${CLIENT_ID}:${CLIENT_SECRET}`
+      ).toString("base64")}`,
+    },
+  })
+    .then((response) => {
+      if (response.status === 200) {
+        console.log(response.data);
+        const { access_token, token_type } = response.data;
+
+        axios
+          .get("https://api.spotify.com/v1/me", {
+            headers: {
+              Authorization: `${token_type} ${access_token}`,
+            },
+          })
+          .then((response) => {
+            res.send(`<pre>${JSON.stringify(response.data, null, 2)}</pre>`);
+          })
+          .catch((error) => {
+            res.send(error);
+          });
+      } else {
+        res.send(response);
+      }
+    })
+    .catch((error) => {
+      res.send(error);
+    });
+});
+
+//to improve ux, we use the refresh token to request a new access token without asking users to login again after the expire time.
+app.get("/refresh_token", (req, res) => {
+  const { refresh_token } = req.query;
+
+  axios({
+    method: "post",
+    url: "https://accounts.spotify.com/api/token",
+    data: querystring.stringify({
+      grant_type: "refresh_token",
+      refresh_token: refresh_token,
+    }),
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${new Buffer.from(
+        `${CLIENT_ID}:${CLIENT_SECRET}`
+      ).toString("base64")}`,
+    },
+  })
+    .then((response) => {
+      res.send(response.data);
+    })
+    .catch((error) => {
+      res.send(error);
+    });
+});
+
 app.listen(port, () => {
   console.log(`Express app listening at http://localhost:${port}`);
 });
