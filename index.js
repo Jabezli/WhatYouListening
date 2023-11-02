@@ -79,22 +79,17 @@ app.get("/callback", (req, res) => {
     .then((response) => {
       if (response.status === 200) {
         console.log(response.data);
-        const { access_token, token_type } = response.data;
+        const { access_token, refresh_token, expires_in } = response.data;
 
-        axios
-          .get("https://api.spotify.com/v1/me", {
-            headers: {
-              Authorization: `${token_type} ${access_token}`,
-            },
-          })
-          .then((response) => {
-            res.send(`<pre>${JSON.stringify(response.data, null, 2)}</pre>`);
-          })
-          .catch((error) => {
-            res.send(error);
-          });
+        const queryParams = querystring.stringify({
+          access_token,
+          refresh_token,
+          expires_in,
+        });
+        //we pass the queryParams received from Spotify back to React app.
+        res.redirect(`http://localhost:3000/?${queryParams}`);
       } else {
-        res.send(response);
+        res.redirect(`/?${querystring.stringify({ error: "invalid_token" })}`);
       }
     })
     .catch((error) => {
